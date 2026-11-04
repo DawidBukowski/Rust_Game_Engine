@@ -24,7 +24,17 @@ fn main() {
         .add_plugins(SpatialPlugin)
         .add_plugins(DebugPlugin)
         .add_systems(Startup, spawn_arena)
+        .add_systems(Update, handle_window_close)
         .run();
+}
+
+fn handle_window_close(
+    mut close_events: MessageReader<bevy::window::WindowCloseRequested>,
+    mut exit: MessageWriter<AppExit>,
+) {
+    for _event in close_events.read() {
+        exit.write(AppExit::Success);
+    }
 }
 
 fn spawn_arena(
