@@ -1,7 +1,9 @@
 use bevy::prelude::*;
 
 use crate::core::time::SimulationControl;
-use crate::input::components::Player;
+use crate::input::components::{ActionState, DashState, Facing, Player};
+use crate::input::config::DashConfig;
+use crate::input::messages::{ActionRequested, DashStarted, RequestedAction};
 use crate::physics::components::{Pillar, Pushbox, Velocity};
 use crate::physics::config::PushboxConfig;
 
@@ -81,9 +83,97 @@ pub fn clamp_to_arena(
     transform.translation.z = clamped.y;
 }
 
+pub fn compute_i_frame(elapsed_ticks: u32, start: u32, end: u32) -> bool {
+    elapsed_ticks >= start && elapsed_ticks < end
+}
+
+#[allow(clippy::type_complexity)]
+pub fn apply_dash(
+    config: Res<DashConfig>,
+    mut messages: MessageReader<ActionRequested>,
+    mut dash_writer: MessageWriter<DashStarted>,
+    mut query: Query<
+        (
+            Entity,
+            &mut DashState,
+            &mut ActionState,
+            &mut Velocity,
+            &Facing,
+        ),
+        With<Player>,
+    >,
+) {
+    let Ok((entity, mut dash, mut action, mut velocity, _facing)) = query.single_mut() else {
+        return;
+    };
+
+    for msg in messages.read() {
+        match msg.action {
+            RequestedAction::Dash { direction } => {
+                if *action == ActionState::Dashing || dash.charges == 0 {
+                    continue;
+                }
+
+                *action = ActionState::Dashing;
+                dash.elapsed_ticks = 0;
+                dash.direction = direction;
+                dash.charges -= 1;
+                dash.cooldown_remaining = config.cooldown_ticks;
+                velocity.value = direction * config.speed;
+
+                dash_writer.write(DashStarted { entity, direction });
+            }
+        }
+    }
+}
+
+pub fn tick_dash(
+    config: Res<DashConfig>,
+    mut query: Query<(&mut DashState, &mut ActionState, &mut Velocity), With<Player>>,
+) {
+    let Ok((mut dash, mut action, mut velocity)) = query.single_mut() else {
+        return;
+    };
+
+    if *action != ActionState::Dashing && dash.charges < config.max_charges {
+        if dash.cooldown_remaining > 0 {
+            dash.cooldown_remaining -= 1;
+        }
+        if dash.cooldown_remaining == 0 {
+            dash.charges += 1;
+            if dash.charges < config.max_charges {
+                dash.cooldown_remaining = config.cooldown_ticks;
+            }
+        }
+    }
+
+    if *action != ActionState::Dashing {
+        return;
+    }
+
+    dash.elapsed_ticks += 1;
+
+    dash.invulnerable = compute_i_frame(
+        dash.elapsed_ticks,
+        config.i_frame_start_tick,
+        config.i_frame_end_tick,
+    );
+
+    velocity.value = dash.direction * config.speed;
+
+    if dash.elapsed_ticks >= config.duration_ticks {
+        *action = ActionState::Idle;
+        dash.invulnerable = false;
+        dash.elapsed_ticks = 0;
+        dash.direction = Vec2::ZERO;
+        velocity.value = Vec2::ZERO;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::input::components::DashState;
 
     #[test]
     fn circle_push_separates_overlapping() {
@@ -116,5 +206,59 @@ mod tests {
         let result = clamp_position_to_arena(Vec2::new(5.0, -3.0), 0.4, 19.5);
         assert!((result.x - 5.0).abs() < f32::EPSILON);
         assert!((result.y - (-3.0)).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn i_frame_before_window_is_false() {
+        assert!(!compute_i_frame(1, 2, 8));
+    }
+
+    #[test]
+    fn i_frame_inside_window_is_true() {
+        assert!(compute_i_frame(2, 2, 8));
+        assert!(compute_i_frame(5, 2, 8));
+        assert!(compute_i_frame(7, 2, 8));
+    }
+
+    #[test]
+    fn i_frame_at_end_boundary_is_false() {
+        assert!(!compute_i_frame(8, 2, 8));
+        assert!(!compute_i_frame(10, 2, 8));
+    }
+
+    #[test]
+    fn dash_lifecycle_i_frames() {
+        let mut invulnerable_ticks = Vec::new();
+        for tick in 1..=10u32 {
+            if compute_i_frame(tick, 2, 8) {
+                invulnerable_ticks.push(tick);
+            }
+        }
+        assert_eq!(invulnerable_ticks, vec![2, 3, 4, 5, 6, 7]);
+    }
+
+    #[test]
+    fn cooldown_regens_charge() {
+        let mut dash = DashState::new(2);
+        dash.charges = 1;
+        dash.cooldown_remaining = 2;
+        let max_charges = 2u32;
+
+        // Tick 1: cooldown 2 → 1
+        if dash.cooldown_remaining > 0 {
+            dash.cooldown_remaining -= 1;
+        }
+        assert_eq!(dash.cooldown_remaining, 1);
+        assert_eq!(dash.charges, 1);
+
+        // Tick 2: cooldown 1 → 0, regen charge to max
+        if dash.cooldown_remaining > 0 {
+            dash.cooldown_remaining -= 1;
+        }
+        if dash.cooldown_remaining == 0 && dash.charges < max_charges {
+            dash.charges += 1;
+        }
+        assert_eq!(dash.charges, 2);
+        assert_eq!(dash.cooldown_remaining, 0);
     }
 }

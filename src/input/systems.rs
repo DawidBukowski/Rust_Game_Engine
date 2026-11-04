@@ -1,8 +1,11 @@
 use bevy::prelude::*;
 
 use crate::core::time::SimulationControl;
-use crate::input::components::{ActionState, Facing, InputBuffer, InputSnapshot, Player};
+use crate::input::components::{
+    ActionState, DashState, Facing, InputBuffer, InputSnapshot, Player,
+};
 use crate::input::config::MovementConfig;
+use crate::input::messages::{ActionRequested, RequestedAction};
 use crate::physics::components::Velocity;
 use crate::spatial::camera::CameraConfig;
 
@@ -37,7 +40,7 @@ pub fn read_raw_input(
 
     buffer.push(InputSnapshot {
         move_direction,
-        dash_requested: false,
+        dash_requested: keyboard.just_pressed(KeyCode::Space),
         tick: sim.tick_count,
     });
 }
@@ -97,6 +100,47 @@ pub fn resolve_movement_intent(
         if velocity.value.length_squared() < 0.0001 {
             *state = ActionState::Idle;
         }
+    }
+}
+
+#[allow(clippy::type_complexity)]
+pub fn process_input_buffer(
+    mut query: Query<(Entity, &mut InputBuffer, &ActionState, &DashState, &Facing), With<Player>>,
+    mut action_writer: MessageWriter<ActionRequested>,
+    camera_config: Res<CameraConfig>,
+) {
+    let Ok((entity, mut buffer, action, dash, facing)) = query.single_mut() else {
+        return;
+    };
+
+    let last_consumed = buffer.last_consumed_tick;
+    let mut dash_raw_dir = None;
+
+    for snapshot in buffer.iter_recent(last_consumed) {
+        if snapshot.dash_requested {
+            dash_raw_dir = Some(snapshot.move_direction);
+        }
+    }
+
+    let new_tick = buffer.latest().map(|s| s.tick);
+    if let Some(tick) = new_tick {
+        buffer.last_consumed_tick = tick;
+    }
+
+    if let Some(raw) = dash_raw_dir
+        && *action != ActionState::Dashing
+        && dash.charges > 0
+    {
+        let direction = if raw.length_squared() > 0.001 {
+            camera_relative_direction(raw, camera_config.yaw)
+        } else {
+            facing.direction
+        };
+
+        action_writer.write(ActionRequested {
+            entity,
+            action: RequestedAction::Dash { direction },
+        });
     }
 }
 

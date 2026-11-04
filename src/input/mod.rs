@@ -7,7 +7,7 @@ use bevy::prelude::*;
 
 use self::config::{load_dash_config, load_movement_config};
 use self::messages::{ActionRequested, DashStarted};
-use self::systems::{read_raw_input, resolve_movement_intent};
+use self::systems::{process_input_buffer, read_raw_input, resolve_movement_intent};
 use crate::core::sets::GameSet;
 use crate::core::time::tick_counter_system;
 
@@ -27,6 +27,11 @@ impl Plugin for InputPlugin {
                 .in_set(GameSet::Input)
                 .after(tick_counter_system),
         );
-        app.add_systems(FixedUpdate, resolve_movement_intent.in_set(GameSet::Intent));
+        app.add_systems(
+            FixedUpdate,
+            (process_input_buffer, resolve_movement_intent)
+                .chain()
+                .in_set(GameSet::Intent),
+        );
     }
 }
