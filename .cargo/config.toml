@@ -1,0 +1,6 @@
+# Fast linking on Windows GNU target (uses MSYS2 MinGW GCC 14.2.0)
+# Bevy's `dynamic_linking` feature provides the main compile-speed benefit.
+
+[target.x86_64-unknown-linux-gnu]
+linker = "/usr/bin/clang"
+rustflags = ["-Clink-arg=-fuse-ld=lld"]

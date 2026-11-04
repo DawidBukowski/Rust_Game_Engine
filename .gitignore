@@ -1,0 +1,9 @@
+/target
+logs/
+*.log
+.env
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
