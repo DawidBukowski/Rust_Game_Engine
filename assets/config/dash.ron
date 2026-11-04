@@ -1,0 +1,8 @@
+(
+    speed: 22.0,
+    duration_ticks: 10,
+    cooldown_ticks: 30,
+    max_charges: 2,
+    i_frame_start_tick: 2,
+    i_frame_end_tick: 8,
+)

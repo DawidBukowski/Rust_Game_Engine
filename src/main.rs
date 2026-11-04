@@ -3,10 +3,16 @@ use bevy::prelude::*;
 
 mod core;
 mod debug;
+#[allow(dead_code)]
+mod input;
+#[allow(dead_code)]
+mod physics;
 mod spatial;
 
 use crate::core::CorePlugin;
 use crate::debug::DebugPlugin;
+use crate::input::InputPlugin;
+use crate::physics::PhysicsPlugin;
 use crate::spatial::SpatialPlugin;
 
 fn main() {
@@ -21,6 +27,8 @@ fn main() {
         }))
         .add_plugins(FrameTimeDiagnosticsPlugin::default())
         .add_plugins(CorePlugin)
+        .add_plugins(InputPlugin)
+        .add_plugins(PhysicsPlugin)
         .add_plugins(SpatialPlugin)
         .add_plugins(DebugPlugin)
         .add_systems(Startup, spawn_arena)

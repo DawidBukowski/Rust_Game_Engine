@@ -1,0 +1,5 @@
+(
+    player_radius: 0.4,
+    pillar_radius: 0.5,
+    arena_half_extent: 19.5,
+)
